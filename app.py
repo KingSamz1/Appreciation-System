@@ -25,7 +25,7 @@ PAPER = "#FFFFFF"
 # Keep PAID_MODE = False while offering the 3-letter trial.
 # After the client pays, change PAID_MODE to True and redeploy
 # to allow unlimited letter generation.
-PAID_MODE = True
+PAID_MODE = False
 TRIAL_LETTER_LIMIT = 3
 TRIAL_DB_PATH = os.path.join(os.path.dirname(__file__), "trial_usage.db")
 
@@ -252,55 +252,66 @@ def wrap_by_pixels(draw, text, font, max_width):
 
 def create_letter_image(recipient):
     """
-    Create a polished portrait digital e-card (not a plain document page).
-    The original appreciation wording is retained; only the recipient name changes.
+    Create a premium KEJI-FODA appreciation e-card.
+    Keeps the supplied appreciation wording unchanged; only inserts the recipient name.
     """
-    W, H = 1400, 1900
-    im = Image.new("RGB", (W, H), "#F2F4FA")
+    W, H = 1400, 2100
+    im = Image.new("RGB", (W, H), "#F7F2E8")
     d = ImageDraw.Draw(im)
 
-    # Soft two-tone card background and layered rounded borders
-    d.rounded_rectangle((28, 28, W - 28, H - 28), radius=54,
-                        fill="#FFFFFF", outline="#D6DCEF", width=4)
-    d.rounded_rectangle((52, 52, W - 52, H - 52), radius=42,
-                        outline="#1D328E", width=5)
-    d.rounded_rectangle((68, 68, W - 68, H - 68), radius=34,
-                        outline="#D5B66C", width=2)
+    # Warm ivory base with layered navy and gold frames
+    d.rounded_rectangle((24, 24, W-24, H-24), radius=58,
+                        fill="#FFFDF8", outline="#C8A45D", width=7)
+    d.rounded_rectangle((48, 48, W-48, H-48), radius=46,
+                        outline="#172B78", width=5)
+    d.rounded_rectangle((66, 66, W-66, H-66), radius=36,
+                        outline="#E8D6A8", width=3)
 
-    # Decorative top and bottom gold flourishes
-    d.rounded_rectangle((520, 92, 880, 104), radius=6, fill="#C8A45D")
-    d.ellipse((492, 88, 512, 108), fill="#C8A45D")
-    d.ellipse((888, 88, 908, 108), fill="#C8A45D")
+    # Deep navy header/footer panels give the card a richer greeting-card finish
+    d.rounded_rectangle((72, 78, W-72, 350), radius=34, fill="#172B78")
+    d.rectangle((72, 295, W-72, 350), fill="#172B78")
+    d.rounded_rectangle((72, 1880, W-72, H-78), radius=34, fill="#172B78")
+    d.rectangle((72, 1880, W-72, 1918), fill="#172B78")
 
-    # Soft decorative corner motifs
-    for cx, cy in [(112, 128), (W-112, 128), (112, H-128), (W-112, H-128)]:
-        d.ellipse((cx-12, cy-12, cx+12, cy+12), outline="#C8A45D", width=3)
-        d.ellipse((cx-5, cy-5, cx+5, cy+5), fill="#1D328E")
+    # Gold header detailing and corner ornaments
+    d.rounded_rectangle((440, 105, 960, 116), radius=5, fill="#D9B765")
+    d.ellipse((416, 101, 440, 125), fill="#F5E5B9", outline="#D9B765", width=3)
+    d.ellipse((960, 101, 984, 125), fill="#F5E5B9", outline="#D9B765", width=3)
+    for cx in (112, W-112):
+        d.ellipse((cx-13, 135, cx+13, 161), outline="#E7CB83", width=3)
+        d.ellipse((cx-5, 143, cx+5, 153), fill="#E7CB83")
 
-    # Logo: contained in a clean white medallion
-    d.ellipse((W//2-205, 125, W//2+205, 535),
-              fill="#FFFFFF", outline="#E7D7B1", width=4)
+    # Logo medallion: white with a gold ring and subtle navy outer ring
+    d.ellipse((W//2-220, 125, W//2+220, 565),
+              fill="#FFFFFF", outline="#D9B765", width=8)
+    d.ellipse((W//2-205, 140, W//2+205, 550),
+              outline="#172B78", width=3)
     logo_path = os.path.join(os.path.dirname(__file__), "assets", "keji_foda_logo.jpg")
     logo = Image.open(logo_path).convert("RGB")
-    logo.thumbnail((345, 345), Image.Resampling.LANCZOS)
-    lx = (W - logo.width) // 2
-    ly = 145 + (345 - logo.height) // 2
+    logo.thumbnail((365, 365), Image.Resampling.LANCZOS)
+    lx = (W-logo.width)//2
+    ly = 150 + (365-logo.height)//2
     im.paste(logo, (lx, ly))
     d = ImageDraw.Draw(im)
 
-    # Card heading and divider
+    # Heading on a warm white title plaque
+    d.rounded_rectangle((250, 585, 1150, 735), radius=28,
+                        fill="#FFF9E9", outline="#D9B765", width=3)
     title_font = get_font(58, True)
     title = "APPRECIATION"
     tw = d.textbbox((0, 0), title, font=title_font)[2]
-    d.text(((W - tw) // 2, 555), title, font=title_font, fill="#1D328E")
+    d.text(((W-tw)//2, 602), title, font=title_font, fill="#172B78")
 
-    subtitle_font = get_font(25, True)
+    subtitle_font = get_font(24, True)
     subtitle = "WITH GRATITUDE FROM THE KEJI-FODA FAMILY"
     sw = d.textbbox((0, 0), subtitle, font=subtitle_font)[2]
-    d.text(((W - sw) // 2, 635), subtitle, font=subtitle_font, fill="#A27B36")
-    d.rounded_rectangle((430, 690, 970, 698), radius=4, fill="#C8A45D")
+    d.text(((W-sw)//2, 680), subtitle, font=subtitle_font, fill="#9A702A")
 
-    # Original message text; the recipient name is the only inserted field.
+    # Decorative gold divider with a central diamond
+    d.rounded_rectangle((360, 765, 1040, 774), radius=4, fill="#D1AD5B")
+    d.polygon([(700, 754), (712, 769), (700, 784), (688, 769)], fill="#B58A3B")
+
+    # Original appreciation wording. Only the recipient's name is personalised.
     paragraphs = [
         f"Dear {recipient},",
         "Greetings in the name of our Lord.",
@@ -310,34 +321,35 @@ def create_letter_image(recipient):
         "We are forever grateful.",
     ]
 
-    # Card body is placed in a subtly tinted panel to distinguish it from a letter page.
-    panel_top, panel_bottom = 735, 1680
-    d.rounded_rectangle((112, panel_top, W-112, panel_bottom), radius=28,
-                        fill="#FBFCFF", outline="#E1E6F3", width=2)
+    # Message panel in pale champagne with a gold left accent
+    panel = (105, 805, W-105, 1825)
+    d.rounded_rectangle(panel, radius=32, fill="#FFFCF4",
+                        outline="#E5D4AA", width=3)
+    d.rounded_rectangle((105, 835, 122, 1545), radius=8, fill="#D1AD5B")
+    d.rounded_rectangle((1278, 835, 1295, 1545), radius=8, fill="#E9DAB8")
 
-    body_x, body_y, body_width = 165, 770, 1070
-    body_font_size = 32
-    body_font = get_font(body_font_size)
-    greeting_font = get_font(34, True)
+    body_x, body_y, body_width = 165, 845, 1070
+    body_font = get_font(32)
+    greeting_font = get_font(35, True)
     line_height = 39
     paragraph_gap = 12
 
     for idx, para in enumerate(paragraphs):
         font = greeting_font if idx == 0 else body_font
-        color = "#1D328E" if idx == 0 else "#30384B"
+        color = "#172B78" if idx == 0 else "#30384B"
         lines = wrap_by_pixels(d, para, font, body_width)
         for line in lines:
             d.text((body_x, body_y), line, font=font, fill=color)
             body_y += line_height
         body_y += paragraph_gap
 
-    # Signature section in a distinct card footer panel
+    # Signature block; preserve exact wording and contact details
     body_y += 2
     sign_font = get_font(29)
     sign_bold = get_font(31, True)
     sign_lines = [
         ("With deep appreciation,", sign_font, "#30384B", 36),
-        ("John Alinaitwe", sign_bold, "#1D328E", 39),
+        ("John Alinaitwe", sign_bold, "#172B78", 39),
         ("Chairperson, KEJI-FODA", sign_font, "#30384B", 36),
         ("TEL: 0772425718", sign_font, "#30384B", 36),
         ("Email : kejifoda2015@gmail.com", sign_font, "#30384B", 36),
@@ -346,12 +358,16 @@ def create_letter_image(recipient):
         d.text((body_x, body_y), text, font=font, fill=color)
         body_y += advance
 
-    # Bottom gold rule and e-card identity
-    d.rounded_rectangle((430, 1740, 970, 1748), radius=4, fill="#C8A45D")
-    footer_font = get_font(25, True)
+    # Footer message in gold on navy, framed by a gold flourish
+    d.rounded_rectangle((470, 1925, 930, 1934), radius=4, fill="#D9B765")
+    footer_font = get_font(30, True)
     footer = "UNITED IN CHRIST"
     fw = d.textbbox((0, 0), footer, font=footer_font)[2]
-    d.text(((W-fw)//2, 1770), footer, font=footer_font, fill="#B52D3A")
+    d.text(((W-fw)//2, 1960), footer, font=footer_font, fill="#F6E6B8")
+
+    # Small gold decorative marks at the footer corners
+    for cx in (145, W-145):
+        d.ellipse((cx-10, 2010, cx+10, 2030), outline="#D9B765", width=3)
 
     out = io.BytesIO()
     im.save(out, format="PNG", optimize=True)
