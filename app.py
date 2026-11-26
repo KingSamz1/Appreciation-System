@@ -98,93 +98,84 @@ def ensure_trial_usage(conn):
         raise
 
 def get_trial_count():
-    """Return the number of letters generated on this installation."""
-    with sqlite3.connect(TRIAL_DB_PATH, timeout=20, isolation_level=None) as conn:
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS trial_usage (
-                id INTEGER PRIMARY KEY CHECK (id = 1),
-                letters_generated INTEGER NOT NULL DEFAULT 0
-            )
-        """)
-        conn.execute("""
-            INSERT OR IGNORE INTO trial_usage (id, letters_generated)
-            VALUES (1, 0)
-        """)
-        columns = {
-            row[1] for row in conn.execute("PRAGMA table_info(trial_usage)").fetchall()
-        }
-        if "downloads_generated" not in columns:
-            conn.execute(
-                "ALTER TABLE trial_usage ADD COLUMN downloads_generated INTEGER NOT NULL DEFAULT 0"
-            )
-        row = conn.execute(
+    with sqlite3.connect(
+        TRIAL_DB_PATH, timeout=20, isolation_level=None
+    ) as conn:
+        ensure_trial_usage(conn)
+        return conn.execute(
             "SELECT letters_generated FROM trial_usage WHERE id = 1"
-        ).fetchone()
-        return int(row[0])
+        ).fetchone()[0]
 
 
 def get_trial_download_count():
-    """Return the number of e-card downloads used in the free trial."""
-    with sqlite3.connect(TRIAL_DB_PATH, timeout=20, isolation_level=None) as conn:
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS trial_usage (
-                id INTEGER PRIMARY KEY CHECK (id = 1),
-                letters_generated INTEGER NOT NULL DEFAULT 0,
-                downloads_generated INTEGER NOT NULL DEFAULT 0
-            )
-        """)
-        columns = {
-            row[1] for row in conn.execute("PRAGMA table_info(trial_usage)").fetchall()
-        }
-        if "downloads_generated" not in columns:
-            conn.execute(
-                "ALTER TABLE trial_usage ADD COLUMN downloads_generated INTEGER NOT NULL DEFAULT 0"
-            )
-        conn.execute("""
-            INSERT OR IGNORE INTO trial_usage (id, letters_generated, downloads_generated)
-            VALUES (1, 0, 0)
-        """)
-        row = conn.execute(
+    with sqlite3.connect(
+        TRIAL_DB_PATH, timeout=20, isolation_level=None
+    ) as conn:
+        ensure_trial_usage(conn)
+        return conn.execute(
             "SELECT downloads_generated FROM trial_usage WHERE id = 1"
-        ).fetchone()
-        return int(row[0])
+        ).fetchone()[0]
 
 
-def use_one_trial_download():
-    """Atomically consume one of the three allowed free e-card downloads."""
-    with sqlite3.connect(TRIAL_DB_PATH, timeout=20, isolation_level=None) as conn:
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS trial_usage (
-                id INTEGER PRIMARY KEY CHECK (id = 1),
-                letters_generated INTEGER NOT NULL DEFAULT 0,
-                downloads_generated INTEGER NOT NULL DEFAULT 0
-            )
-        """)
-        columns = {
-            row[1] for row in conn.execute("PRAGMA table_info(trial_usage)").fetchall()
-        }
-        if "downloads_generated" not in columns:
-            conn.execute(
-                "ALTER TABLE trial_usage ADD COLUMN downloads_generated INTEGER NOT NULL DEFAULT 0"
-            )
+def use_one_trial_letter():
+    with sqlite3.connect(
+        TRIAL_DB_PATH, timeout=20, isolation_level=None
+    ) as conn:
+        ensure_trial_usage(conn)
         conn.execute("BEGIN IMMEDIATE")
+
         try:
-            conn.execute("""
-                INSERT OR IGNORE INTO trial_usage (id, letters_generated, downloads_generated)
-                VALUES (1, 0, 0)
-            """)
-            used = int(conn.execute(
-                "SELECT downloads_generated FROM trial_usage WHERE id = 1"
-            ).fetchone()[0])
+            used = conn.execute(
+                "SELECT letters_generated FROM trial_usage WHERE id = 1"
+            ).fetchone()[0]
+
             if used >= TRIAL_LETTER_LIMIT:
                 conn.rollback()
                 return False, used
-            conn.execute(
-                "UPDATE trial_usage SET downloads_generated = ? WHERE id = 1",
-                (used + 1,)
-            )
+
+            used += 1
+
+            conn.execute("""
+                UPDATE trial_usage
+                SET letters_generated = ?
+                WHERE id = 1
+            """, (used,))
+
             conn.commit()
-            return True, used + 1
+            return True, used
+
+        except Exception:
+            conn.rollback()
+            raise
+
+
+def use_one_trial_download():
+    with sqlite3.connect(
+        TRIAL_DB_PATH, timeout=20, isolation_level=None
+    ) as conn:
+        ensure_trial_usage(conn)
+        conn.execute("BEGIN IMMEDIATE")
+
+        try:
+            used = conn.execute(
+                "SELECT downloads_generated FROM trial_usage WHERE id = 1"
+            ).fetchone()[0]
+
+            if used >= TRIAL_DOWNLOAD_LIMIT:
+                conn.rollback()
+                return False, used
+
+            used += 1
+
+            conn.execute("""
+                UPDATE trial_usage
+                SET downloads_generated = ?
+                WHERE id = 1
+            """, (used,))
+
+            conn.commit()
+            return True, used
+
         except Exception:
             conn.rollback()
             raise
