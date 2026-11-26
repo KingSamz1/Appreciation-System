@@ -22,15 +22,80 @@ PAPER = "#FFFFFF"
 
 
 # ---------------- FREE TRIAL SETTINGS ----------------
-# Keep PAID_MODE = False while offering the 3-letter trial.
-# After the client pays, change PAID_MODE to True and redeploy
-# to allow unlimited letter generation.
+
 PAID_MODE = False
+
 TRIAL_LETTER_LIMIT = 3
 TRIAL_DOWNLOAD_LIMIT = 3
-TRIAL_RESET_VERSION = 2
-TRIAL_DB_PATH = os.path.join(os.path.dirname(__file__), "trial_usage.db")
 
+# Increase this number to reset everyone's trial.
+TRIAL_RESET_VERSION = 1
+
+TRIAL_DB_PATH = os.path.join(
+    os.path.dirname(__file__),
+    "trial_usage.db"
+)
+
+def ensure_trial_usage(conn):
+    """Create trial table and reset all counters when reset version changes."""
+
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS trial_usage (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            letters_generated INTEGER NOT NULL DEFAULT 0,
+            downloads_generated INTEGER NOT NULL DEFAULT 0,
+            reset_version INTEGER NOT NULL DEFAULT 0
+        )
+    """)
+
+    columns = {
+        row[1]
+        for row in conn.execute(
+            "PRAGMA table_info(trial_usage)"
+        ).fetchall()
+    }
+
+    if "downloads_generated" not in columns:
+        conn.execute("""
+            ALTER TABLE trial_usage
+            ADD COLUMN downloads_generated INTEGER NOT NULL DEFAULT 0
+        """)
+
+    if "reset_version" not in columns:
+        conn.execute("""
+            ALTER TABLE trial_usage
+            ADD COLUMN reset_version INTEGER NOT NULL DEFAULT 0
+        """)
+
+    conn.execute("BEGIN IMMEDIATE")
+
+    try:
+        conn.execute("""
+            INSERT OR IGNORE INTO trial_usage
+            (id, letters_generated, downloads_generated, reset_version)
+            VALUES (1, 0, 0, ?)
+        """, (TRIAL_RESET_VERSION,))
+
+        current_version = conn.execute("""
+            SELECT reset_version
+            FROM trial_usage
+            WHERE id = 1
+        """).fetchone()[0]
+
+        if current_version != TRIAL_RESET_VERSION:
+            conn.execute("""
+                UPDATE trial_usage
+                SET letters_generated = 0,
+                    downloads_generated = 0,
+                    reset_version = ?
+                WHERE id = 1
+            """, (TRIAL_RESET_VERSION,))
+
+        conn.commit()
+
+    except Exception:
+        conn.rollback()
+        raise
 
 def get_trial_count():
     """Return the number of letters generated on this installation."""
