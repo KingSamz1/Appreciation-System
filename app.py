@@ -25,9 +25,10 @@ PAPER = "#FFFFFF"
 # Keep PAID_MODE = False while offering the 3-letter trial.
 # After the client pays, change PAID_MODE to True and redeploy
 # to allow unlimited letter generation.
-PAID_MODE = False
+PAID_MODE = True
 TRIAL_LETTER_LIMIT = 3
 TRIAL_DOWNLOAD_LIMIT = 3
+TRIAL_RESET_VERSION = 1
 TRIAL_DB_PATH = os.path.join(os.path.dirname(__file__), "trial_usage.db")
 
 
