@@ -216,20 +216,41 @@ with right:
             use_container_width=True,
         )
         st.markdown("---")
-        st.subheader("4. WhatsApp")
-        phone_to_use = st.text_input("Confirm WhatsApp number", value=st.session_state.get("letter_phone", ""), key="confirm_phone")
-        normalized = normalize_phone(phone_to_use)
-        if normalized and len(normalized) >= 10:
-            wa_url = "https://wa.me/" + normalized + "?text=" + quote(st.session_state["letter_text"])
-            st.link_button("💬 Open WhatsApp chat with letter text", wa_url, use_container_width=True)
-        else:
-            st.info("Enter a valid WhatsApp number above, then generate the letter or confirm the number here.")
-        with st.expander("View exact WhatsApp message text"):
-            st.text(st.session_state["letter_text"])
-    else:
-        st.info("Your personalised appreciation letter will appear here after you enter a name and press Generate.")
-        st.image(os.path.join(os.path.dirname(__file__), "assets", "keji_foda_logo.jpg"), width=210)
-    st.markdown('</div>', unsafe_allow_html=True)
+        st.subheader("4. Send Appreciation Image")
+
+phone_to_use = st.text_input(
+    "Recipient WhatsApp number",
+    value=st.session_state.get("letter_phone", ""),
+    key="confirm_phone"
+)
+
+normalized = normalize_phone(phone_to_use)
+
+if normalized and len(normalized) >= 10:
+
+    wa_url = "https://wa.me/" + normalized
+
+    st.link_button(
+        "📷 Send Appreciation Image via WhatsApp",
+        wa_url,
+        use_container_width=True
+    )
+
+    st.download_button(
+        "⬇️ Download Image to Attach",
+        data=st.session_state["letter_png"],
+        file_name="KEJI-FODA_Appreciation.png",
+        mime="image/png",
+        use_container_width=True
+    )
+
+    st.info(
+        "WhatsApp will open the recipient's chat. "
+        "Attach the downloaded appreciation image and press Send."
+    )
+
+else:
+    st.warning("Please enter a valid WhatsApp number.")
 
 st.markdown("""
 <div style="text-align:center; color:#7a8193; padding:24px 0 0 0; font-size:.82rem;">
