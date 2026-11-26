@@ -29,7 +29,7 @@ TRIAL_LETTER_LIMIT = 3
 TRIAL_DOWNLOAD_LIMIT = 3
 
 # Increase this number to reset everyone's trial.
-TRIAL_RESET_VERSION = 2
+TRIAL_RESET_VERSION = 3
 
 TRIAL_DB_PATH = os.path.join(
     os.path.dirname(__file__),
