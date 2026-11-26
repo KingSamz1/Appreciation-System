@@ -2,6 +2,7 @@ import io
 import os
 import re
 import textwrap
+import sqlite3
 from urllib.parse import quote
 
 import streamlit as st
@@ -19,6 +20,63 @@ GOLD = "#C9A45C"
 INK = "#20263A"
 MUTED = "#687086"
 PAPER = "#FFFFFF"
+
+
+# ---------------- FREE TRIAL SETTINGS ----------------
+# Keep PAID_MODE = False while offering the 3-letter trial.
+# After the client pays, change PAID_MODE to True and redeploy
+# to allow unlimited letter generation.
+PAID_MODE = False
+TRIAL_LETTER_LIMIT = 3
+TRIAL_DB_PATH = os.path.join(os.path.dirname(__file__), "trial_usage.db")
+
+
+def get_trial_count():
+    """Return the number of letters generated on this installation."""
+    with sqlite3.connect(TRIAL_DB_PATH, timeout=20) as conn:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS trial_usage (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                letters_generated INTEGER NOT NULL DEFAULT 0
+            )
+        """)
+        conn.execute("""
+            INSERT OR IGNORE INTO trial_usage (id, letters_generated)
+            VALUES (1, 0)
+        """)
+        row = conn.execute(
+            "SELECT letters_generated FROM trial_usage WHERE id = 1"
+        ).fetchone()
+        return int(row[0])
+
+
+def use_one_trial_letter():
+    """Atomically consume one trial letter; prevents simultaneous overuse."""
+    with sqlite3.connect(TRIAL_DB_PATH, timeout=20) as conn:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS trial_usage (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                letters_generated INTEGER NOT NULL DEFAULT 0
+            )
+        """)
+        conn.execute("""
+            INSERT OR IGNORE INTO trial_usage (id, letters_generated)
+            VALUES (1, 0)
+        """)
+        conn.execute("BEGIN IMMEDIATE")
+        row = conn.execute(
+            "SELECT letters_generated FROM trial_usage WHERE id = 1"
+        ).fetchone()
+        used = int(row[0])
+        if used >= TRIAL_LETTER_LIMIT:
+            conn.rollback()
+            return False, used
+        conn.execute(
+            "UPDATE trial_usage SET letters_generated = ? WHERE id = 1",
+            (used + 1,)
+        )
+        conn.commit()
+        return True, used + 1
 
 st.markdown("""
 <style>
@@ -177,7 +235,23 @@ with left:
     recipient = st.text_input("Recipient name", placeholder="Enter the name to appear after Dear")
     phone = st.text_input("WhatsApp number", placeholder="e.g. 0772 425 718 or +256 772 425 718")
     st.caption("Use the recipient's number. Ugandan numbers beginning with 0 are converted to +256 automatically.")
-    generate = st.button("✨ Generate appreciation letter", type="primary", use_container_width=True)
+    trial_count = get_trial_count()
+    trial_remaining = max(0, TRIAL_LETTER_LIMIT - trial_count)
+
+    if not PAID_MODE:
+        st.caption(f"Free trial: {trial_remaining} of {TRIAL_LETTER_LIMIT} letters remaining.")
+        if trial_remaining == 0:
+            st.error(
+                "Your 3-letter free trial has ended. "
+                "Please contact the KEJI-FODA system provider to activate the full version."
+            )
+
+    generate = st.button(
+        "✨ Generate appreciation letter",
+        type="primary",
+        use_container_width=True,
+        disabled=(not PAID_MODE and trial_remaining <= 0)
+    )
     st.markdown('<p class="small-note">The appreciation message, wording, dates, contact details and signature are kept as supplied. Only the recipient name is filled in.</p>', unsafe_allow_html=True)
     st.markdown('</div>', unsafe_allow_html=True)
 
@@ -197,10 +271,26 @@ if generate:
     if not recipient.strip():
         st.error("Please enter the recipient's name.")
     else:
-        st.session_state["letter_recipient"] = recipient.strip()
-        st.session_state["letter_png"] = create_letter_image(recipient.strip())
-        st.session_state["letter_text"] = letter_text(recipient.strip())
-        st.session_state["letter_phone"] = phone.strip()
+        allowed = True
+        if not PAID_MODE:
+            allowed, total_used = use_one_trial_letter()
+
+        if not allowed:
+            st.error(
+                "Your 3-letter free trial has ended. "
+                "Please contact the KEJI-FODA system provider to activate the full version."
+            )
+        else:
+            st.session_state["letter_recipient"] = recipient.strip()
+            st.session_state["letter_png"] = create_letter_image(recipient.strip())
+            st.session_state["letter_text"] = letter_text(recipient.strip())
+            st.session_state["letter_phone"] = phone.strip()
+
+            if not PAID_MODE:
+                st.success(
+                    f"Letter generated. {max(0, TRIAL_LETTER_LIMIT - total_used)} "
+                    "free trial letter(s) remaining."
+                )
 
 with right:
     st.markdown('<div class="panel">', unsafe_allow_html=True)
@@ -216,41 +306,20 @@ with right:
             use_container_width=True,
         )
         st.markdown("---")
-        st.subheader("4. Send Appreciation Image")
-
-phone_to_use = st.text_input(
-    "Recipient WhatsApp number",
-    value=st.session_state.get("letter_phone", ""),
-    key="confirm_phone"
-)
-
-normalized = normalize_phone(phone_to_use)
-
-if normalized and len(normalized) >= 10:
-
-    wa_url = "https://wa.me/" + normalized
-
-    st.link_button(
-        "📷 Send Appreciation Image via WhatsApp",
-        wa_url,
-        use_container_width=True
-    )
-
-    st.download_button(
-        "⬇️ Download Image to Attach",
-        data=st.session_state["letter_png"],
-        file_name="KEJI-FODA_Appreciation.png",
-        mime="image/png",
-        use_container_width=True
-    )
-
-    st.info(
-        "WhatsApp will open the recipient's chat. "
-        "Attach the downloaded appreciation image and press Send."
-    )
-
-else:
-    st.warning("Please enter a valid WhatsApp number.")
+        st.subheader("4. WhatsApp")
+        phone_to_use = st.text_input("Confirm WhatsApp number", value=st.session_state.get("letter_phone", ""), key="confirm_phone")
+        normalized = normalize_phone(phone_to_use)
+        if normalized and len(normalized) >= 10:
+            wa_url = "https://wa.me/" + normalized + "?text=" + quote(st.session_state["letter_text"])
+            st.link_button("💬 Open WhatsApp chat with letter text", wa_url, use_container_width=True)
+        else:
+            st.info("Enter a valid WhatsApp number above, then generate the letter or confirm the number here.")
+        with st.expander("View exact WhatsApp message text"):
+            st.text(st.session_state["letter_text"])
+    else:
+        st.info("Your personalised appreciation letter will appear here after you enter a name and press Generate.")
+        st.image(os.path.join(os.path.dirname(__file__), "assets", "keji_foda_logo.jpg"), width=210)
+    st.markdown('</div>', unsafe_allow_html=True)
 
 st.markdown("""
 <div style="text-align:center; color:#7a8193; padding:24px 0 0 0; font-size:.82rem;">
