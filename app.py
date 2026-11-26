@@ -33,7 +33,7 @@ TRIAL_DB_PATH = os.path.join(os.path.dirname(__file__), "trial_usage.db")
 
 def get_trial_count():
     """Return the number of letters generated on this installation."""
-    with sqlite3.connect(TRIAL_DB_PATH, timeout=20) as conn:
+    with sqlite3.connect(TRIAL_DB_PATH, timeout=20, isolation_level=None) as conn:
         conn.execute("""
             CREATE TABLE IF NOT EXISTS trial_usage (
                 id INTEGER PRIMARY KEY CHECK (id = 1),
@@ -52,31 +52,42 @@ def get_trial_count():
 
 def use_one_trial_letter():
     """Atomically consume one trial letter; prevents simultaneous overuse."""
-    with sqlite3.connect(TRIAL_DB_PATH, timeout=20) as conn:
+    with sqlite3.connect(TRIAL_DB_PATH, timeout=20, isolation_level=None) as conn:
         conn.execute("""
             CREATE TABLE IF NOT EXISTS trial_usage (
                 id INTEGER PRIMARY KEY CHECK (id = 1),
                 letters_generated INTEGER NOT NULL DEFAULT 0
             )
         """)
-        conn.execute("""
-            INSERT OR IGNORE INTO trial_usage (id, letters_generated)
-            VALUES (1, 0)
-        """)
+
+        # Start the write transaction before any INSERT/UPDATE.
+        # isolation_level=None disables sqlite3's implicit transaction,
+        # preventing "cannot start a transaction within a transaction".
         conn.execute("BEGIN IMMEDIATE")
-        row = conn.execute(
-            "SELECT letters_generated FROM trial_usage WHERE id = 1"
-        ).fetchone()
-        used = int(row[0])
-        if used >= TRIAL_LETTER_LIMIT:
+        try:
+            conn.execute("""
+                INSERT OR IGNORE INTO trial_usage (id, letters_generated)
+                VALUES (1, 0)
+            """)
+            row = conn.execute(
+                "SELECT letters_generated FROM trial_usage WHERE id = 1"
+            ).fetchone()
+            used = int(row[0])
+
+            if used >= TRIAL_LETTER_LIMIT:
+                conn.rollback()
+                return False, used
+
+            conn.execute(
+                "UPDATE trial_usage SET letters_generated = ? WHERE id = 1",
+                (used + 1,)
+            )
+            conn.commit()
+            return True, used + 1
+        except Exception:
             conn.rollback()
-            return False, used
-        conn.execute(
-            "UPDATE trial_usage SET letters_generated = ? WHERE id = 1",
-            (used + 1,)
-        )
-        conn.commit()
-        return True, used + 1
+            raise
+
 
 st.markdown("""
 <style>
