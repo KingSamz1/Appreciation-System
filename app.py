@@ -25,7 +25,7 @@ PAPER = "#FFFFFF"
 # Keep PAID_MODE = False while offering the 3-letter trial.
 # After the client pays, change PAID_MODE to True and redeploy
 # to allow unlimited letter generation.
-PAID_MODE = True
+PAID_MODE = False
 TRIAL_LETTER_LIMIT = 3
 TRIAL_DB_PATH = os.path.join(os.path.dirname(__file__), "trial_usage.db")
 
@@ -43,10 +43,93 @@ def get_trial_count():
             INSERT OR IGNORE INTO trial_usage (id, letters_generated)
             VALUES (1, 0)
         """)
+        columns = {
+            row[1] for row in conn.execute("PRAGMA table_info(trial_usage)").fetchall()
+        }
+        if "downloads_generated" not in columns:
+            conn.execute(
+                "ALTER TABLE trial_usage ADD COLUMN downloads_generated INTEGER NOT NULL DEFAULT 0"
+            )
         row = conn.execute(
             "SELECT letters_generated FROM trial_usage WHERE id = 1"
         ).fetchone()
         return int(row[0])
+
+
+def get_trial_download_count():
+    """Return the number of e-card downloads used in the free trial."""
+    with sqlite3.connect(TRIAL_DB_PATH, timeout=20, isolation_level=None) as conn:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS trial_usage (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                letters_generated INTEGER NOT NULL DEFAULT 0,
+                downloads_generated INTEGER NOT NULL DEFAULT 0
+            )
+        """)
+        columns = {
+            row[1] for row in conn.execute("PRAGMA table_info(trial_usage)").fetchall()
+        }
+        if "downloads_generated" not in columns:
+            conn.execute(
+                "ALTER TABLE trial_usage ADD COLUMN downloads_generated INTEGER NOT NULL DEFAULT 0"
+            )
+        conn.execute("""
+            INSERT OR IGNORE INTO trial_usage (id, letters_generated, downloads_generated)
+            VALUES (1, 0, 0)
+        """)
+        row = conn.execute(
+            "SELECT downloads_generated FROM trial_usage WHERE id = 1"
+        ).fetchone()
+        return int(row[0])
+
+
+def use_one_trial_download():
+    """Atomically consume one of the three allowed free e-card downloads."""
+    with sqlite3.connect(TRIAL_DB_PATH, timeout=20, isolation_level=None) as conn:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS trial_usage (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                letters_generated INTEGER NOT NULL DEFAULT 0,
+                downloads_generated INTEGER NOT NULL DEFAULT 0
+            )
+        """)
+        columns = {
+            row[1] for row in conn.execute("PRAGMA table_info(trial_usage)").fetchall()
+        }
+        if "downloads_generated" not in columns:
+            conn.execute(
+                "ALTER TABLE trial_usage ADD COLUMN downloads_generated INTEGER NOT NULL DEFAULT 0"
+            )
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            conn.execute("""
+                INSERT OR IGNORE INTO trial_usage (id, letters_generated, downloads_generated)
+                VALUES (1, 0, 0)
+            """)
+            used = int(conn.execute(
+                "SELECT downloads_generated FROM trial_usage WHERE id = 1"
+            ).fetchone()[0])
+            if used >= TRIAL_LETTER_LIMIT:
+                conn.rollback()
+                return False, used
+            conn.execute(
+                "UPDATE trial_usage SET downloads_generated = ? WHERE id = 1",
+                (used + 1,)
+            )
+            conn.commit()
+            return True, used + 1
+        except Exception:
+            conn.rollback()
+            raise
+
+
+def record_trial_download_click():
+    """Streamlit download-button callback."""
+    if PAID_MODE:
+        return
+    allowed, used = use_one_trial_download()
+    st.session_state["trial_download_blocked"] = not allowed
+    st.session_state["trial_downloads_used"] = used
 
 
 def use_one_trial_letter():
@@ -309,23 +392,14 @@ with form_col:
         "Recipient name",
         placeholder="Enter the name to appear after Dear"
     )
-    phone = st.text_input(
-        "WhatsApp number",
-        placeholder="e.g. 0772 425 718 or +256 772 425 718"
-    )
-    st.caption(
-        "Ugandan numbers beginning with 0 are converted to the international +256 format."
-    )
-
 with help_col:
     st.markdown("""
     <div class="panel">
       <strong>How it works</strong>
       <ol>
-        <li>Enter the recipient's name and number.</li>
+        <li>Enter the recipient's name.</li>
         <li>Generate the personalised appreciation image.</li>
-        <li>Download the image and open WhatsApp.</li>
-        <li>Attach the image and manually press Send.</li>
+        <li>Download your finished appreciation e-card.</li>
       </ol>
       <p class="small-note">The original appreciation message is preserved. Only the name after Dear changes.</p>
     </div>
@@ -366,7 +440,6 @@ if generate:
             st.session_state["letter_recipient"] = recipient.strip()
             st.session_state["letter_png"] = create_letter_image(recipient.strip())
             st.session_state["letter_text"] = letter_text(recipient.strip())
-            st.session_state["letter_phone"] = phone.strip()
 
             if not PAID_MODE:
                 st.success(
@@ -391,50 +464,38 @@ if "letter_png" in st.session_state:
     ).strip("_")
     image_filename = f"KEJI-FODA_Appreciation_{safe_name or 'Letter'}.png"
 
+    if PAID_MODE:
+        download_remaining = None
+        download_disabled = False
+    else:
+        downloads_used = get_trial_download_count()
+        download_remaining = max(0, TRIAL_LETTER_LIMIT - downloads_used)
+        download_disabled = download_remaining <= 0
+        st.caption(
+            f"Free trial downloads remaining: {download_remaining} of {TRIAL_LETTER_LIMIT}."
+        )
+        if download_disabled:
+            st.warning(
+                "Your 3 free e-card downloads have been used. "
+                "Please contact the system provider to activate the full version."
+            )
+
     st.download_button(
         "⬇️ Download Appreciation Image (PNG)",
         data=st.session_state["letter_png"],
         file_name=image_filename,
         mime="image/png",
-        use_container_width=True
+        use_container_width=True,
+        disabled=download_disabled,
+        on_click=None if PAID_MODE else record_trial_download_click,
+        key="download_appreciation_ecard",
     )
 
-    st.markdown("---")
-    st.subheader("3. Send Appreciation Image")
-
-    phone_to_use = st.text_input(
-        "Recipient WhatsApp number",
-        value=st.session_state.get("letter_phone", ""),
-        key="confirm_phone"
-    )
-
-    normalized = normalize_phone(phone_to_use)
-
-    if normalized and len(normalized) >= 10:
-
-        wa_url = "https://wa.me/" + normalized
-
-        st.link_button(
-            "📷 Send Appreciation Image via WhatsApp",
-            wa_url,
-            use_container_width=True
+    if st.session_state.pop("trial_download_blocked", False):
+        st.error(
+            "Your 3 free e-card downloads have been used. "
+            "Please contact the system provider to activate the full version."
         )
-
-        st.download_button(
-            "⬇️ Download Image to Attach",
-            data=st.session_state["letter_png"],
-            file_name=image_filename,
-            mime="image/png",
-            use_container_width=True
-        )
-
-        st.info(
-            "WhatsApp will open the recipient's chat. "
-            "Attach the downloaded appreciation image and press Send."
-        )
-
-    else:
-        st.warning("Please enter a valid WhatsApp number.")
 
 else:
     st.info("Your personalised KEJI-FODA appreciation e-card will appear here after you generate it.")
@@ -445,6 +506,6 @@ else:
 
 st.markdown("""
 <div style="text-align:center; color:#7a8193; padding:24px 0 0 0; font-size:.82rem;">
-KEJI-FODA Appreciation Letter Studio · Local generation, manual WhatsApp sending
+KEJI-FODA Appreciation E-card Studio
 </div>
 """, unsafe_allow_html=True)
