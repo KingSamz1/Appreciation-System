@@ -25,7 +25,7 @@ PAPER = "#FFFFFF"
 # Keep PAID_MODE = False while offering the 3-letter trial.
 # After the client pays, change PAID_MODE to True and redeploy
 # to allow unlimited letter generation.
-PAID_MODE = True
+PAID_MODE = False
 TRIAL_LETTER_LIMIT = 3
 TRIAL_DB_PATH = os.path.join(os.path.dirname(__file__), "trial_usage.db")
 
@@ -168,37 +168,56 @@ def wrap_by_pixels(draw, text, font, max_width):
     return lines
 
 def create_letter_image(recipient):
-    # Larger canvas + larger typography so the preview is readable at page width.
-    W, H = 1600, 2000
-    im = Image.new("RGB", (W, H), "#F5F6FA")
+    """
+    Create a polished portrait digital e-card (not a plain document page).
+    The original appreciation wording is retained; only the recipient name changes.
+    """
+    W, H = 1400, 1900
+    im = Image.new("RGB", (W, H), "#F2F4FA")
     d = ImageDraw.Draw(im)
 
-    # Main paper and refined frame
-    d.rounded_rectangle((42, 36, W-42, H-36), radius=34, fill=PAPER, outline="#E5E8F0", width=3)
-    d.rounded_rectangle((65, 60, W-65, H-60), radius=25, outline=NAVY, width=4)
-    d.rounded_rectangle((78, 73, W-78, H-73), radius=20, outline="#D7DDF4", width=2)
+    # Soft two-tone card background and layered rounded borders
+    d.rounded_rectangle((28, 28, W - 28, H - 28), radius=54,
+                        fill="#FFFFFF", outline="#D6DCEF", width=4)
+    d.rounded_rectangle((52, 52, W - 52, H - 52), radius=42,
+                        outline="#1D328E", width=5)
+    d.rounded_rectangle((68, 68, W - 68, H - 68), radius=34,
+                        outline="#D5B66C", width=2)
 
-    # Logo and top accent
-    d.rounded_rectangle((625, 105, 975, 115), radius=5, fill=GOLD)
+    # Decorative top and bottom gold flourishes
+    d.rounded_rectangle((520, 92, 880, 104), radius=6, fill="#C8A45D")
+    d.ellipse((492, 88, 512, 108), fill="#C8A45D")
+    d.ellipse((888, 88, 908, 108), fill="#C8A45D")
+
+    # Soft decorative corner motifs
+    for cx, cy in [(112, 128), (W-112, 128), (112, H-128), (W-112, H-128)]:
+        d.ellipse((cx-12, cy-12, cx+12, cy+12), outline="#C8A45D", width=3)
+        d.ellipse((cx-5, cy-5, cx+5, cy+5), fill="#1D328E")
+
+    # Logo: contained in a clean white medallion
+    d.ellipse((W//2-205, 125, W//2+205, 535),
+              fill="#FFFFFF", outline="#E7D7B1", width=4)
     logo_path = os.path.join(os.path.dirname(__file__), "assets", "keji_foda_logo.jpg")
     logo = Image.open(logo_path).convert("RGB")
-    logo.thumbnail((390, 365), Image.Resampling.LANCZOS)
+    logo.thumbnail((345, 345), Image.Resampling.LANCZOS)
     lx = (W - logo.width) // 2
-    im.paste(logo, (lx, 140))
+    ly = 145 + (345 - logo.height) // 2
+    im.paste(logo, (lx, ly))
     d = ImageDraw.Draw(im)
 
-    title_font = get_font(56, True)
+    # Card heading and divider
+    title_font = get_font(58, True)
     title = "APPRECIATION"
     tw = d.textbbox((0, 0), title, font=title_font)[2]
-    d.text(((W-tw)//2, 535), title, font=title_font, fill=NAVY)
-    d.rounded_rectangle((620, 615, 980, 624), radius=4, fill=GOLD)
+    d.text(((W - tw) // 2, 555), title, font=title_font, fill="#1D328E")
 
-    body_font = get_font(39)
-    body_bold = get_font(40, True)
-    x, y, maxw = 170, 685, 1260
-    line_height = 51
-    para_gap = 15
+    subtitle_font = get_font(25, True)
+    subtitle = "WITH GRATITUDE FROM THE KEJI-FODA FAMILY"
+    sw = d.textbbox((0, 0), subtitle, font=subtitle_font)[2]
+    d.text(((W - sw) // 2, 635), subtitle, font=subtitle_font, fill="#A27B36")
+    d.rounded_rectangle((430, 690, 970, 698), radius=4, fill="#C8A45D")
 
+    # Original message text; the recipient name is the only inserted field.
     paragraphs = [
         f"Dear {recipient},",
         "Greetings in the name of our Lord.",
@@ -208,28 +227,48 @@ def create_letter_image(recipient):
         "We are forever grateful.",
     ]
 
+    # Card body is placed in a subtly tinted panel to distinguish it from a letter page.
+    panel_top, panel_bottom = 735, 1680
+    d.rounded_rectangle((112, panel_top, W-112, panel_bottom), radius=28,
+                        fill="#FBFCFF", outline="#E1E6F3", width=2)
+
+    body_x, body_y, body_width = 165, 770, 1070
+    body_font_size = 32
+    body_font = get_font(body_font_size)
+    greeting_font = get_font(34, True)
+    line_height = 39
+    paragraph_gap = 12
+
     for idx, para in enumerate(paragraphs):
-        f = body_bold if idx == 0 else body_font
-        lines = wrap_by_pixels(d, para, f, maxw)
+        font = greeting_font if idx == 0 else body_font
+        color = "#1D328E" if idx == 0 else "#30384B"
+        lines = wrap_by_pixels(d, para, font, body_width)
         for line in lines:
-            d.text((x, y), line, font=f, fill=INK)
-            y += line_height
-        y += para_gap
+            d.text((body_x, body_y), line, font=font, fill=color)
+            body_y += line_height
+        body_y += paragraph_gap
 
-    # Signature block: compact vertical rhythm while retaining clear separation.
-    y += 4
-    d.text((x, y), "With deep appreciation,", font=body_font, fill=INK); y += 58
-    d.text((x, y), "John Alinaitwe", font=body_bold, fill=NAVY); y += 54
-    d.text((x, y), "Chairperson, KEJI-FODA", font=body_font, fill=INK); y += 54
-    d.text((x, y), "TEL: 0772425718", font=body_font, fill=INK); y += 54
-    d.text((x, y), "Email : kejifoda2015@gmail.com", font=body_font, fill=INK)
+    # Signature section in a distinct card footer panel
+    body_y += 2
+    sign_font = get_font(29)
+    sign_bold = get_font(31, True)
+    sign_lines = [
+        ("With deep appreciation,", sign_font, "#30384B", 36),
+        ("John Alinaitwe", sign_bold, "#1D328E", 39),
+        ("Chairperson, KEJI-FODA", sign_font, "#30384B", 36),
+        ("TEL: 0772425718", sign_font, "#30384B", 36),
+        ("Email : kejifoda2015@gmail.com", sign_font, "#30384B", 36),
+    ]
+    for text, font, color, advance in sign_lines:
+        d.text((body_x, body_y), text, font=font, fill=color)
+        body_y += advance
 
-    # Footer
-    d.line((170, 1880, 1430, 1880), fill="#DCE1F2", width=3)
-    footer_font = get_font(23, True)
-    footer = "KEJI-FODA  •  UNITED IN CHRIST"
+    # Bottom gold rule and e-card identity
+    d.rounded_rectangle((430, 1740, 970, 1748), radius=4, fill="#C8A45D")
+    footer_font = get_font(25, True)
+    footer = "UNITED IN CHRIST"
     fw = d.textbbox((0, 0), footer, font=footer_font)[2]
-    d.text(((W-fw)//2, 1900), footer, font=footer_font, fill=RED)
+    d.text(((W-fw)//2, 1770), footer, font=footer_font, fill="#B52D3A")
 
     out = io.BytesIO()
     im.save(out, format="PNG", optimize=True)
@@ -336,7 +375,7 @@ if generate:
                 )
 
 st.markdown("---")
-st.subheader("2. Appreciation letter preview")
+st.subheader("2. Appreciation e-card preview")
 
 if "letter_png" in st.session_state:
     st.image(
@@ -398,7 +437,7 @@ if "letter_png" in st.session_state:
         st.warning("Please enter a valid WhatsApp number.")
 
 else:
-    st.info("Your personalised appreciation letter will appear here after you generate it.")
+    st.info("Your personalised KEJI-FODA appreciation e-card will appear here after you generate it.")
     st.image(
         os.path.join(os.path.dirname(__file__), "assets", "keji_foda_logo.jpg"),
         width=220
