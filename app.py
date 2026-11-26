@@ -28,7 +28,7 @@ PAPER = "#FFFFFF"
 PAID_MODE = False
 TRIAL_LETTER_LIMIT = 3
 TRIAL_DOWNLOAD_LIMIT = 3
-TRIAL_RESET_VERSION = 1
+TRIAL_RESET_VERSION = 2
 TRIAL_DB_PATH = os.path.join(os.path.dirname(__file__), "trial_usage.db")
 
 
