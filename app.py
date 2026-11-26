@@ -25,7 +25,7 @@ PAPER = "#FFFFFF"
 # Keep PAID_MODE = False while offering the 3-letter trial.
 # After the client pays, change PAID_MODE to True and redeploy
 # to allow unlimited letter generation.
-PAID_MODE = True
+PAID_MODE = False
 TRIAL_LETTER_LIMIT = 3
 TRIAL_DB_PATH = os.path.join(os.path.dirname(__file__), "trial_usage.db")
 
@@ -145,12 +145,11 @@ def get_font(size, bold=False):
     path = font_path(bold)
     if path:
         return ImageFont.truetype(path, size)
-    # Scalable fallback is not available; fail clearly instead of silently
-    # generating a tiny, unreadable default bitmap font.
-    raise RuntimeError(
-        "Font files are missing. Ensure assets/fonts/DejaVuSans.ttf and "
-        "assets/fonts/DejaVuSans-Bold.ttf are committed to GitHub."
-    )
+    # Last-resort fallback: keep the app running if font assets were not uploaded.
+    try:
+        return ImageFont.load_default(size=size)
+    except TypeError:
+        return ImageFont.load_default()
 
 
 def wrap_by_pixels(draw, text, font, max_width):
