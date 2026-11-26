@@ -228,15 +228,8 @@ with right:
             st.text(st.session_state["letter_text"])
     else:
         st.info("Your personalised appreciation letter will appear here after you enter a name and press Generate.")
-st.image(
-    os.path.join(
-        os.path.dirname(__file__),
-        "assets",
-        "keji_foda_logo.jpg"
-    ),
-    width=210
-)
-st.markdown('</div>', unsafe_allow_html=True)
+        st.image(os.path.join(os.path.dirname(__file__), "assets", "keji_foda_logo.jpg"), width=210)
+    st.markdown('</div>', unsafe_allow_html=True)
 
 st.markdown("""
 <div style="text-align:center; color:#7a8193; padding:24px 0 0 0; font-size:.82rem;">
